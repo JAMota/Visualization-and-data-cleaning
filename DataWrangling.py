@@ -148,6 +148,7 @@ conn = pyodbc.connect('Driver={SQL Server};'
 # Create a column in your DataFrame to store row numbers
 financeDetailsData['row_number'] = range(1, len(financeDetailsData) + 1)
 
+
 # Iterate through the rows in your DataFrame
 for _, row in financeDetailsData.iterrows():
     # Check if a row with the same row number exists in the SQL Server table
@@ -156,8 +157,47 @@ for _, row in financeDetailsData.iterrows():
     if matching_row.empty:
         # Insert the row into the table using the SQL Server connection
         cursor = conn.cursor()
-        row.drop('row_number', inplace=True)  # Remove the row_number column before insertion
-        row.to_sql(table_name, engine, schema=schema_name, if_exists='append', index=False)
+        
+        # Specify the columns to insert and their corresponding values
+        columns_to_insert = [
+            'row_number', 'ms', 'ms_name_en', 'cci', 'programme_title_short',
+            'status', 'version', 'last_adoption_date_ecms', 'priority_code',
+            'priority_name', 'policy_objective_short_name', 'policy_objective_code',
+            'policy_objective_name', 'specific_objective_short_name', 'specific_objective_code',
+            'specific_objective_name', 'dimension_type', 'category_title_short', 'category_code',
+            'category_name', 'fund', 'category_of_region', 'cofinancing_rate', 'eu_amount',
+            'total_amount', 'climate_weighting', 'eu_climate_amount', 'total_climate_amount',
+            'environmental_weighting', 'eu_environmental_amount', 'total_environmental_amount',
+            'biodiversity_weighting', 'eu_biodiversity_amount', 'total_biodiversity_amount',
+            'gender_weighting', 'eu_gender_amount', 'total_gender_amount', 'clean_air_weighting',
+            'eu_clean_air_amount', 'total_clean_air_amount', 'digital_weighting',
+            'eu_amount_digital', 'total_amount_digital', 'sustainable_urban_development',
+            'territorial_tool', 'territory_type', 'un_sdg_tracking', 'jtf_themes',
+            'priority_type_code', 'priority_type_description'
+        ]
+        
+        # Create a comma-separated list of columns and placeholders for values
+        columns_str = ', '.join(columns_to_insert)
+        placeholders_str = ', '.join(['?'] * len(columns_to_insert))
+        
+        # Construct the SQL INSERT statement
+        sql_insert = f"INSERT INTO {schema_name}.{table_name} ({columns_str}) VALUES ({placeholders_str})"
+        
+        # Create a tuple of values to be inserted
+        values = tuple(row[col] for col in columns_to_insert)
+        
+        # Debugging: Print the problematic row and column
+        print(f"Inserting row: {row['row_number']}")
+        print(f"Problematic row data: {row}")
+        
+        try:
+            # Execute the INSERT statement with the values
+            cursor.execute(sql_insert, values)
+            
+            # Commit the transaction
+            conn.commit()
+        except Exception as e:
+            print(f"Error inserting row: {e}")
     else:
         # Update the existing row
         matching_index = matching_row.index[0]
@@ -168,6 +208,23 @@ conn.commit()
 
 # Close the cursor and connection
 cursor.close()
+conn.close()
+
+
+
+# Establish a connection to SQL Server using SQLAlchemy
+engine = create_engine('mssql+pyodbc:///?odbc_connect=' + urllib.parse.quote_plus('Driver={SQL Server};'
+                                                                                   'Server=localhost\SQLEXPRESS;'
+                                                                                   'Database=YourDatabaseName;'
+                                                                                   'Trusted_Connection=yes;')) 
+
+# Use pandas to insert the data into the SQL Server table
+financeDetailsData.to_sql(table_name, engine, if_exists='replace', index=False)
+
+# Commit the changes
+conn.commit()
+
+# Close the connection
 conn.close()
 
 
