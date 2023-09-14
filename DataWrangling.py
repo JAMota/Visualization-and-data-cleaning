@@ -13,6 +13,16 @@ from unidecode import unidecode
 
 import pyodbc
 
+from sqlalchemy import create_engine
+
+import urllib.parse  # Import the urllib.parse module
+
+
+
+
+
+
+
 
 financeDetailsData = pd.read_csv('hgyj-gyin.csv')
 print(financeDetailsData)
@@ -40,8 +50,8 @@ conn = pyodbc.connect('Driver={SQL Server};'
                       'Database=master;'
                       'Trusted_Connection=yes;')
 
-cursor = conn.cursor()
 
+cursor = conn.cursor()
 
 # Check if the table exists using the INFORMATION_SCHEMA
 table_name = 'finance_details'
@@ -52,7 +62,7 @@ cursor.execute(query)
 exists = cursor.fetchone()[0]
 
 if not exists:
-    # Create the table if it doesn't exist
+    # Create the table if it doesn't exist using the SQL Server connection
     cursor.execute(f"CREATE TABLE {schema_name}.{table_name} ("
                    "row_number INT PRIMARY KEY,"
                    "ms VARCHAR(2),"
@@ -106,9 +116,12 @@ if not exists:
                    "priority_type_description VARCHAR(255)"
                    ")")
 
-
 # Commit the changes
 conn.commit()
+
+# Close the connection temporarily
+conn.close()
+
 
 
 ## now that the table already exists or was created I will check if the data is already there and needs to be updated
@@ -116,11 +129,24 @@ conn.commit()
 
 
 
+# Re-establish the connection to SQL Server using SQLAlchemy engine
+from sqlalchemy import create_engine
+engine = create_engine('mssql+pyodbc:///?odbc_connect=' + urllib.parse.quote_plus('Driver={SQL Server};'
+                                                                                   'Server=localhost\SQLEXPRESS;'
+                                                                                   'Database=master;'
+                                                                                   'Trusted_Connection=yes;'))
+
+# Load the existing data from the SQL Server table into a DataFrame using SQLAlchemy engine
+existing_data = pd.read_sql(f"SELECT * FROM {schema_name}.{table_name}", engine)
+
+# Re-establish the connection to SQL Server for data insertion
+conn = pyodbc.connect('Driver={SQL Server};'
+                      'Server=localhost\SQLEXPRESS;'
+                      'Database=master;'
+                      'Trusted_Connection=yes;')
+
 # Create a column in your DataFrame to store row numbers
 financeDetailsData['row_number'] = range(1, len(financeDetailsData) + 1)
-
-# Load the existing data from the SQL Server table into a DataFrame
-existing_data = pd.read_sql("SELECT * FROM finance_details", conn)
 
 # Iterate through the rows in your DataFrame
 for _, row in financeDetailsData.iterrows():
@@ -128,18 +154,17 @@ for _, row in financeDetailsData.iterrows():
     matching_row = existing_data[existing_data['row_number'] == row['row_number']]
     
     if matching_row.empty:
-        # Insert the row into the table
+        # Insert the row into the table using the SQL Server connection
+        cursor = conn.cursor()
         row.drop('row_number', inplace=True)  # Remove the row_number column before insertion
-        row.to_sql('finance_details', conn, if_exists='append', index=False)
+        row.to_sql(table_name, engine, schema=schema_name, if_exists='append', index=False)
     else:
         # Update the existing row
         matching_index = matching_row.index[0]
         existing_data.loc[matching_index] = row
 
-# Update the SQL Server table with the updated data
-existing_data.to_sql('finance_details', conn, if_exists='replace', index=False)
-
-
+# Commit the changes
+conn.commit()
 
 # Close the cursor and connection
 cursor.close()
